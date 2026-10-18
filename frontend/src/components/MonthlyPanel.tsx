@@ -16,7 +16,7 @@ export function MonthlyPanel({ current, history }: { current: CurrentMonth | nul
           </tr>
         </thead>
         <tbody>
-          {current.slabs.map((l) => (
+          {(current.slabs ?? []).map((l) => (
             <tr key={l.label}>
               <td>{l.label}</td>
               <td>{l.units.toFixed(2)}</td>
@@ -24,7 +24,7 @@ export function MonthlyPanel({ current, history }: { current: CurrentMonth | nul
               <td>{l.amount.toFixed(2)}</td>
             </tr>
           ))}
-          {current.slabs.length === 0 && (
+          {(current.slabs ?? []).length === 0 && (
             <tr>
               <td colSpan={4} className="muted">No usage this month yet.</td>
             </tr>

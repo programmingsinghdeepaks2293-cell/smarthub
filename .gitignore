@@ -33,3 +33,9 @@ package-lock.json
 main.cpython*
 cmd/server/smarthub.db
 tapo-bridge/__pycache__/main.cpython-312.pyc
+smarthub
+tapo-bridge/bridge.env
+tapo-bridge/.venv/
+frontend/tsconfig.tsbuildinfo
+frontend/node_modules/
+frontend/dist/

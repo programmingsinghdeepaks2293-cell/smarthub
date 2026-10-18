@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/api.ts","./src/colors.ts","./src/main.tsx","./src/types.ts","./src/useDevices.ts","./src/components/DataPanel.tsx","./src/components/DeviceCard.tsx","./src/components/Leaderboard.tsx","./src/components/MonthlyPanel.tsx","./src/components/PowerChart.tsx","./src/components/SceneGrid.tsx","./src/components/TipsPanel.tsx"],"version":"5.9.3"}
