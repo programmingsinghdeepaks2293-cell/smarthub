@@ -39,3 +39,9 @@ tapo-bridge/.venv/
 frontend/tsconfig.tsbuildinfo
 frontend/node_modules/
 frontend/dist/
+smarthub
+tapo-bridge/bridge.env
+tapo-bridge/.venv/
+frontend/tsconfig.tsbuildinfo
+frontend/node_modules/
+frontend/dist/
