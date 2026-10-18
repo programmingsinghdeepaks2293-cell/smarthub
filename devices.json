@@ -1,0 +1,9 @@
+{
+  "devices": [
+    { "id": "plug-1", "name": "WASHING MACHINE", "kind": "tapo.plug", "config": { "host": "192.168.1.30" } },
+    { "id": "plug-2", "name": "MICROWAVE", "kind": "tapo.plug", "config": { "host": "192.168.1.31" } },
+    { "id": "bulb-1", "name": "Living Room Bulb", "kind": "wiz.bulb", "config": { "host": "192.168.1.13", "rated_watts": 9 } },
+    { "id": "bulb-2", "name": "Living Room BulbX", "kind": "hue.light",
+      "config": { "bridge": "192.168.1.20", "username": "YOUR_HUE_USERNAME", "light_id": "1", "rated_watts": 9 } }
+  ]
+}
