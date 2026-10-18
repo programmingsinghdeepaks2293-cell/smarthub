@@ -2,8 +2,16 @@ package store
 
 import (
 	"database/sql"
+	"time"
 
 	_ "modernc.org/sqlite"
+)
+
+const (
+	// RawRetentionDays keeps per-poll samples used for the live charts.
+	RawRetentionDays = 30
+	// HourlyRetentionYears keeps hourly energy totals used for bills and history.
+	HourlyRetentionYears = 10
 )
 
 type Store struct{ db *sql.DB }
@@ -13,10 +21,10 @@ type Point struct {
 	W float64 `json:"w"`
 }
 
-type Energy struct {
+// DeviceEnergy is energy summed over a time window for one device.
+type DeviceEnergy struct {
 	DeviceID string
-	KWh      float64
-	AvgW     float64
+	Wh       float64
 	Samples  int64
 }
 
@@ -32,15 +40,39 @@ func Open(path string) (*Store, error) {
 			ts        INTEGER NOT NULL,
 			watts     REAL    NOT NULL
 		);
-		CREATE INDEX IF NOT EXISTS idx_power_dev_ts ON power_samples(device_id, ts);`); err != nil {
+		CREATE INDEX IF NOT EXISTS idx_power_dev_ts ON power_samples(device_id, ts);
+		CREATE TABLE IF NOT EXISTS energy_hourly (
+			device_id TEXT    NOT NULL,
+			hour      INTEGER NOT NULL,
+			wh        REAL    NOT NULL DEFAULT 0,
+			samples   INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (device_id, hour)
+		);`); err != nil {
 		return nil, err
 	}
 	return &Store{db: db}, nil
 }
 
-func (s *Store) RecordPower(id string, ts int64, watts float64) error {
-	_, err := s.db.Exec(`INSERT INTO power_samples(device_id, ts, watts) VALUES (?, ?, ?)`, id, ts, watts)
-	return err
+// RecordPower stores one raw sample and adds its energy to the hourly total.
+func (s *Store) RecordPower(id string, ts int64, watts float64, intervalSec int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`INSERT INTO power_samples(device_id, ts, watts) VALUES (?, ?, ?)`, id, ts, watts); err != nil {
+		return err
+	}
+	hour := ts - ts%3600
+	wh := watts * float64(intervalSec) / 3600
+	if _, err := tx.Exec(`
+		INSERT INTO energy_hourly(device_id, hour, wh, samples) VALUES (?, ?, ?, 1)
+		ON CONFLICT(device_id, hour) DO UPDATE SET wh = wh + excluded.wh, samples = samples + 1`,
+		id, hour, wh); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // Series returns average watts per bucket (bucket is in seconds).
@@ -66,31 +98,55 @@ func (s *Store) Series(id string, since, until, bucket int64) ([]Point, error) {
 	return pts, rows.Err()
 }
 
-// Energy integrates samples into kWh. pollSeconds is the sampling interval.
-func (s *Store) Energy(since int64, pollSeconds float64) ([]Energy, error) {
+// EnergyBetween sums hourly energy per device for hours in [from, to).
+func (s *Store) EnergyBetween(from, to int64) ([]DeviceEnergy, error) {
 	rows, err := s.db.Query(`
-		SELECT device_id, SUM(watts), AVG(watts), COUNT(*)
-		FROM power_samples WHERE ts >= ?
-		GROUP BY device_id ORDER BY SUM(watts) DESC`, since)
+		SELECT device_id, SUM(wh), SUM(samples)
+		FROM energy_hourly
+		WHERE hour >= ? AND hour < ?
+		GROUP BY device_id ORDER BY SUM(wh) DESC`, from, to)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	out := []Energy{}
+	out := []DeviceEnergy{}
 	for rows.Next() {
-		var e Energy
-		var sumW float64
-		if err := rows.Scan(&e.DeviceID, &sumW, &e.AvgW, &e.Samples); err != nil {
+		var e DeviceEnergy
+		if err := rows.Scan(&e.DeviceID, &e.Wh, &e.Samples); err != nil {
 			return nil, err
 		}
-		e.KWh = sumW * pollSeconds / 3.6e6
 		out = append(out, e)
 	}
 	return out, rows.Err()
 }
 
-func (s *Store) Prune(before int64) error {
-	_, err := s.db.Exec(`DELETE FROM power_samples WHERE ts < ?`, before)
+// Prune applies the retention policy: raw samples older than RawRetentionDays
+// and hourly totals older than HourlyRetentionYears are removed.
+func (s *Store) Prune(now time.Time) error {
+	rawCut := now.AddDate(0, 0, -RawRetentionDays).Unix()
+	hourCut := now.AddDate(-HourlyRetentionYears, 0, 0).Unix()
+	if _, err := s.db.Exec(`DELETE FROM power_samples WHERE ts < ?`, rawCut); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM energy_hourly WHERE hour < ?`, hourCut)
+	return err
+}
+
+// DeleteAll erases every stored sample and total. Device configuration is not touched.
+func (s *Store) DeleteAll() error {
+	if _, err := s.db.Exec(`DELETE FROM power_samples`); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM energy_hourly`)
+	return err
+}
+
+// DeleteDevice erases all stored history for one device.
+func (s *Store) DeleteDevice(id string) error {
+	if _, err := s.db.Exec(`DELETE FROM power_samples WHERE device_id = ?`, id); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM energy_hourly WHERE device_id = ?`, id)
 	return err
 }

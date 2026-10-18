@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -24,7 +23,6 @@ func main() {
 	addr := getenv("ADDR", ":8080")
 	dbPath := getenv("DB_PATH", "smarthub.db")
 	cfgPath := getenv("CONFIG", "../../devices.json")
-	tariff, _ := strconv.ParseFloat(getenv("TARIFF_PER_KWH", "0"), 64)
 	poll := 15 * time.Second
 
 	raw, err := os.ReadFile(cfgPath)
@@ -58,22 +56,11 @@ func main() {
 	defer stop()
 
 	go mgr.Run(ctx)
-	go func() {
-		t := time.NewTicker(24 * time.Hour)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				_ = st.Prune(time.Now().AddDate(0, 0, -30).Unix())
-			}
-		}
-	}()
+	go retentionLoop(ctx, st)
 
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: api.New(mgr, st, api.Options{Poll: poll, TariffPerKWh: tariff}),
+		Handler: api.New(mgr, st, api.Options{Poll: poll}),
 	}
 	go func() {
 		<-ctx.Done()
@@ -83,6 +70,22 @@ func main() {
 	log.Printf("SmartHub on %s with %d devices (plugins: %v)", addr, len(devs), core.Kinds())
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
+	}
+}
+
+// retentionLoop enforces the retention policy on startup and then hourly.
+func retentionLoop(ctx context.Context, st *store.Store) {
+	t := time.NewTicker(time.Hour)
+	defer t.Stop()
+	for {
+		if err := st.Prune(time.Now()); err != nil {
+			log.Printf("retention: %v", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
 	}
 }
 

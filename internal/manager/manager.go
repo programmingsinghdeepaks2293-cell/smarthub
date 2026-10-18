@@ -88,7 +88,7 @@ func (m *Manager) poll(ctx context.Context, d core.Device) {
 	m.update(id, st)
 
 	if st.Online && st.PowerW != nil {
-		if err := m.store.RecordPower(id, time.Now().Unix(), *st.PowerW); err != nil {
+		if err := m.store.RecordPower(id, time.Now().Unix(), *st.PowerW, int64(m.interval.Seconds())); err != nil {
 			log.Printf("record power %s: %v", id, err)
 		}
 	}

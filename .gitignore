@@ -1,0 +1,31 @@
+# --- SmartHub Specific ---
+smarthub.db
+devices.json
+
+# --- Go Backend ---
+/cmd/server/server
+*.exe
+*.dll
+*.so
+*.dylib
+
+# --- Node / React Frontend ---
+/frontend/node_modules/
+/frontend/dist/
+/frontend/.env
+/frontend/.env.local
+
+# --- Python / Tapo Bridge ---
+/tapo-bridge/venv/
+/tapo-bridge/.venv/
+/tapo-bridge/env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# --- IDEs & OS Junk ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -7,16 +7,17 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"smarthub/internal/core"
 	"smarthub/internal/manager"
 	"smarthub/internal/store"
+	"smarthub/internal/tariff"
 )
 
 type Options struct {
-	Poll         time.Duration
-	TariffPerKWh float64
+	Poll time.Duration
 }
 
 type Server struct {
@@ -33,6 +34,12 @@ func New(m *manager.Manager, st *store.Store, opts Options) http.Handler {
 	mux.HandleFunc("POST /api/devices/{id}/command", s.command)
 	mux.HandleFunc("GET /api/telemetry/series", s.series)
 	mux.HandleFunc("GET /api/energy/summary", s.summary)
+	mux.HandleFunc("GET /api/energy/current", s.current)
+	mux.HandleFunc("GET /api/energy/monthly", s.monthly)
+	mux.HandleFunc("GET /api/tariff", s.tariffInfo)
+	mux.HandleFunc("GET /api/retention", s.retention)
+	mux.HandleFunc("DELETE /api/data", s.deleteAll)
+	mux.HandleFunc("DELETE /api/data/devices/{id}", s.deleteDevice)
 	mux.HandleFunc("GET /api/events", s.events)
 	return mux
 }
@@ -60,6 +67,15 @@ func (s *Server) command(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, map[string]string{"status": "ok"})
 	}
+}
+
+// meta returns the current device views keyed by ID.
+func (s *Server) meta() map[string]manager.View {
+	out := map[string]manager.View{}
+	for _, v := range s.mgr.Snapshot() {
+		out[v.ID] = v
+	}
+	return out
 }
 
 type window struct {
@@ -103,6 +119,32 @@ func (s *Server) series(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, res)
 }
 
+// monthStart returns the first instant of t's month in t's location.
+func monthStart(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, t.Location())
+}
+
+func totalKWh(rows []store.DeviceEnergy) float64 {
+	var wh float64
+	for _, r := range rows {
+		wh += r.Wh
+	}
+	return wh / 1000
+}
+
+// avgW converts summed watt-hours into average watts from the sample count.
+func avgW(wh float64, samples int64, poll time.Duration) float64 {
+	hours := float64(samples) * poll.Hours()
+	if hours == 0 {
+		return 0
+	}
+	return wh / hours
+}
+
+func httpErr(w http.ResponseWriter, err error) {
+	http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+
 type energyRow struct {
 	DeviceID  string  `json:"device_id"`
 	Name      string  `json:"name"`
@@ -112,32 +154,163 @@ type energyRow struct {
 	Estimated bool    `json:"estimated"`
 }
 
+// summary covers the selected range. Its cost is priced on top of the units
+// already used earlier this month, so it follows the slab rates.
 func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 	win := parseRange(r.URL.Query().Get("range"))
-	since := time.Now().Add(-win.d).Unix()
+	now := time.Now()
+	since := now.Add(-win.d)
 
-	rows, err := s.st.Energy(since, s.opts.Poll.Seconds())
+	rows, err := s.st.EnergyBetween(since.Unix(), now.Unix()+1)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpErr(w, err)
 		return
 	}
-	meta := map[string]manager.View{}
-	for _, v := range s.mgr.Snapshot() {
-		meta[v.ID] = v
+	var prior float64
+	if ms := monthStart(now); since.After(ms) {
+		pre, err := s.st.EnergyBetween(ms.Unix(), since.Unix())
+		if err != nil {
+			httpErr(w, err)
+			return
+		}
+		prior = totalKWh(pre)
 	}
+
+	total := totalKWh(rows)
+	cost := tariff.Cost(prior, total)
+	meta := s.meta()
 	out := make([]energyRow, 0, len(rows))
 	for _, row := range rows {
+		kwh := row.Wh / 1000
+		share := 0.0
+		if total > 0 {
+			share = kwh / total
+		}
 		m := meta[row.DeviceID]
 		out = append(out, energyRow{
 			DeviceID:  row.DeviceID,
 			Name:      m.Name,
-			KWh:       row.KWh,
-			AvgW:      row.AvgW,
-			Cost:      row.KWh * s.opts.TariffPerKWh,
+			KWh:       kwh,
+			AvgW:      avgW(row.Wh, row.Samples, s.opts.Poll),
+			Cost:      cost * share,
 			Estimated: m.State.PowerEstimated,
 		})
 	}
 	writeJSON(w, out)
+}
+
+type devMonth struct {
+	DeviceID string  `json:"device_id"`
+	Name     string  `json:"name"`
+	KWh      float64 `json:"kwh"`
+	Cost     float64 `json:"cost"`
+}
+
+// devMonths splits a month's bill across devices in proportion to their energy.
+func (s *Server) devMonths(rows []store.DeviceEnergy, total, bill float64) []devMonth {
+	meta := s.meta()
+	out := make([]devMonth, 0, len(rows))
+	for _, r := range rows {
+		kwh := r.Wh / 1000
+		cost := 0.0
+		if total > 0 {
+			cost = bill * kwh / total
+		}
+		out = append(out, devMonth{r.DeviceID, meta[r.DeviceID].Name, kwh, cost})
+	}
+	return out
+}
+
+func (s *Server) current(w http.ResponseWriter, _ *http.Request) {
+	ms := monthStart(time.Now())
+	rows, err := s.st.EnergyBetween(ms.Unix(), ms.AddDate(0, 1, 0).Unix())
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	total := totalKWh(rows)
+	bill := tariff.Billed(total)
+	writeJSON(w, map[string]any{
+		"month":   ms.Format("2006-01"),
+		"kwh":     total,
+		"bill":    bill,
+		"slabs":   tariff.Breakdown(total),
+		"devices": s.devMonths(rows, total, bill),
+	})
+}
+
+type monthRow struct {
+	Month   string     `json:"month"`
+	KWh     float64    `json:"kwh"`
+	Bill    float64    `json:"bill"`
+	Devices []devMonth `json:"devices"`
+}
+
+func (s *Server) monthly(w http.ResponseWriter, r *http.Request) {
+	n, err := strconv.Atoi(r.URL.Query().Get("months"))
+	if err != nil || n < 1 {
+		n = 12
+	}
+	if n > 120 {
+		n = 120
+	}
+	base := monthStart(time.Now())
+	out := make([]monthRow, 0, n)
+	for i := n - 1; i >= 0; i-- {
+		ms := base.AddDate(0, -i, 0)
+		rows, err := s.st.EnergyBetween(ms.Unix(), ms.AddDate(0, 1, 0).Unix())
+		if err != nil {
+			httpErr(w, err)
+			return
+		}
+		total := totalKWh(rows)
+		bill := tariff.Billed(total)
+		out = append(out, monthRow{ms.Format("2006-01"), total, bill, s.devMonths(rows, total, bill)})
+	}
+	writeJSON(w, out)
+}
+
+func (s *Server) tariffInfo(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, map[string]any{"slabs": tariff.Slabs})
+}
+
+func (s *Server) retention(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, map[string]int{
+		"raw_days":     store.RawRetentionDays,
+		"hourly_years": store.HourlyRetentionYears,
+	})
+}
+
+// Deletes require ?confirm=DELETE so a stray request can't erase history.
+func confirmed(r *http.Request) bool {
+	return r.URL.Query().Get("confirm") == "DELETE"
+}
+
+func (s *Server) deleteAll(w http.ResponseWriter, r *http.Request) {
+	if !confirmed(r) {
+		http.Error(w, "add ?confirm=DELETE to erase energy data", http.StatusBadRequest)
+		return
+	}
+	if err := s.st.DeleteAll(); err != nil {
+		httpErr(w, err)
+		return
+	}
+	log.Printf("user deleted all energy data")
+	writeJSON(w, map[string]string{"status": "deleted", "scope": "all"})
+}
+
+func (s *Server) deleteDevice(w http.ResponseWriter, r *http.Request) {
+	if !confirmed(r) {
+		http.Error(w, "add ?confirm=DELETE to erase device data", http.StatusBadRequest)
+		return
+	}
+	id := r.PathValue("id")
+	if err := s.st.DeleteDevice(id); err != nil {
+		httpErr(w, err)
+		return
+	}
+	log.Printf("user deleted data for device %s", id)
+	writeJSON(w, map[string]string{"status": "deleted", "scope": id})
 }
 
 // events streams device state to the browser using Server-Sent Events.

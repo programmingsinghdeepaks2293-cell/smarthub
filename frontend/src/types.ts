@@ -41,3 +41,37 @@ export interface EnergyRow {
   cost: number;
   estimated: boolean;
 }
+
+export interface SlabLine {
+  label: string;
+  units: number;
+  rate: number;
+  amount: number;
+}
+
+export interface MonthDevice {
+  device_id: string;
+  name: string;
+  kwh: number;
+  cost: number;
+}
+
+export interface CurrentMonth {
+  month: string;
+  kwh: number;
+  bill: number;
+  slabs: SlabLine[];
+  devices: MonthDevice[];
+}
+
+export interface MonthRow {
+  month: string;
+  kwh: number;
+  bill: number;
+  devices: MonthDevice[];
+}
+
+export interface Retention {
+  raw_days: number;
+  hourly_years: number;
+}
