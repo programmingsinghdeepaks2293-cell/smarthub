@@ -75,3 +75,11 @@ export interface Retention {
   raw_days: number;
   hourly_years: number;
 }
+
+export interface Tip {
+  severity: "info" | "tip" | "warn";
+  device_id?: string;
+  device?: string;
+  title: string;
+  detail: string;
+}

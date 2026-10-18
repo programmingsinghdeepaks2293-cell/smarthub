@@ -68,3 +68,10 @@ ul.device-data li { display: flex; justify-content: space-between; align-items: 
 .confirm-box { background: #1d2437; border: 1px solid #b91c1c; border-radius: 12px; padding: 14px; display: grid; gap: 10px; }
 .confirm-box p { margin: 0; }
 .confirm-box input { background: var(--bg); color: var(--text); border: 1px solid var(--grid); border-radius: 8px; padding: 8px; max-width: 220px; }
+
+ul.tips { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+ul.tips li { display: flex; gap: 12px; align-items: flex-start; background: #1d2437; border-radius: 12px; padding: 12px 14px; border-left: 3px solid var(--accent); }
+ul.tips li.warn { border-left-color: #f59e0b; }
+ul.tips li.tip { border-left-color: var(--ok); }
+ul.tips li p { margin: 4px 0 0; color: var(--muted); font-size: .9rem; }
+.tip-icon { font-size: 1.1rem; line-height: 1.4; }

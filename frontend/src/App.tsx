@@ -6,7 +6,8 @@ import { PowerChart } from "./components/PowerChart";
 import { Leaderboard } from "./components/Leaderboard";
 import { MonthlyPanel } from "./components/MonthlyPanel";
 import { DataPanel } from "./components/DataPanel";
-import type { CurrentMonth, EnergyRow, MonthRow, Range, Retention, SeriesDevice } from "./types";
+import { TipsPanel } from "./components/TipsPanel";
+import type { CurrentMonth, EnergyRow, MonthRow, Range, Retention, SeriesDevice, Tip } from "./types";
 import "./App.css";
 
 const RANGES: Range[] = ["1h", "24h", "7d"];
@@ -19,6 +20,7 @@ export default function App() {
   const [month, setMonth] = useState<CurrentMonth | null>(null);
   const [history, setHistory] = useState<MonthRow[]>([]);
   const [retention, setRetention] = useState<Retention | null>(null);
+  const [tips, setTips] = useState<Tip[] | null>(null);
   const [plugins, setPlugins] = useState<string[]>([]);
   const [tick, setTick] = useState(0);
 
@@ -33,6 +35,7 @@ export default function App() {
       api.energy(range).then(setEnergy).catch(console.error);
       api.current().then(setMonth).catch(console.error);
       api.monthly(12).then(setHistory).catch(console.error);
+      api.insights().then(setTips).catch(console.error);
     };
     load();
     const t = setInterval(load, 15_000);
@@ -84,6 +87,11 @@ export default function App() {
       <section className="panel">
         <h2>Monthly bill (slab rates)</h2>
         <MonthlyPanel current={month} history={history} />
+      </section>
+
+      <section className="panel">
+        <h2>Tips</h2>
+        <TipsPanel tips={tips} />
       </section>
 
       <section className="panel">

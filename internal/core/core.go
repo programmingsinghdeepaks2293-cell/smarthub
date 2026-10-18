@@ -76,6 +76,7 @@ type Spec struct {
 	Name   string          `json:"name"`
 	Kind   string          `json:"kind"`
 	Config json.RawMessage `json:"config"`
+	OnWatts float64        `json:"on_watts,omitempty"` // power above which the device counts as running
 }
 
 type Factory func(spec Spec) (Device, error)

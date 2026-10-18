@@ -11,13 +11,15 @@ import (
 	"time"
 
 	"smarthub/internal/core"
+	"smarthub/internal/insights"
 	"smarthub/internal/manager"
 	"smarthub/internal/store"
 	"smarthub/internal/tariff"
 )
 
 type Options struct {
-	Poll time.Duration
+	Poll    time.Duration
+	OnWatts map[string]float64
 }
 
 type Server struct {
@@ -38,6 +40,7 @@ func New(m *manager.Manager, st *store.Store, opts Options) http.Handler {
 	mux.HandleFunc("GET /api/energy/monthly", s.monthly)
 	mux.HandleFunc("GET /api/tariff", s.tariffInfo)
 	mux.HandleFunc("GET /api/retention", s.retention)
+	mux.HandleFunc("GET /api/insights", s.insights)
 	mux.HandleFunc("DELETE /api/data", s.deleteAll)
 	mux.HandleFunc("DELETE /api/data/devices/{id}", s.deleteDevice)
 	mux.HandleFunc("GET /api/events", s.events)
@@ -351,4 +354,20 @@ func writeEvent(w io.Writer, name string, v any) {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func (s *Server) insights(w http.ResponseWriter, _ *http.Request) {
+	var devs []insights.Device
+	for _, v := range s.mgr.Snapshot() {
+		if !v.Has(core.CapPowerMeter) {
+			continue
+		}
+		devs = append(devs, insights.Device{ID: v.ID, Name: v.Name, OnW: s.opts.OnWatts[v.ID]})
+	}
+	tips, err := insights.Analyze(s.st, devs, time.Now(), int64(s.opts.Poll.Seconds()))
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	writeJSON(w, tips)
 }

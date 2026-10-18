@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	// RawRetentionDays keeps per-poll samples used for the live charts.
-	RawRetentionDays = 30
+	// RawRetentionDays keeps per-poll samples for charts and tip detection.
+	RawRetentionDays = 365
 	// HourlyRetentionYears keeps hourly energy totals used for bills and history.
 	HourlyRetentionYears = 10
 )
@@ -19,6 +19,12 @@ type Store struct{ db *sql.DB }
 type Point struct {
 	T int64   `json:"t"`
 	W float64 `json:"w"`
+}
+
+// Sample is one raw reading.
+type Sample struct {
+	T int64
+	W float64
 }
 
 // DeviceEnergy is energy summed over a time window for one device.
@@ -149,4 +155,26 @@ func (s *Store) DeleteDevice(id string) error {
 	}
 	_, err := s.db.Exec(`DELETE FROM energy_hourly WHERE device_id = ?`, id)
 	return err
+}
+
+// Samples returns raw readings for one device in [since, until], oldest first.
+func (s *Store) Samples(id string, since, until int64) ([]Sample, error) {
+	rows, err := s.db.Query(`
+		SELECT ts, watts FROM power_samples
+		WHERE device_id = ? AND ts BETWEEN ? AND ?
+		ORDER BY ts`, id, since, until)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []Sample{}
+	for rows.Next() {
+		var x Sample
+		if err := rows.Scan(&x.T, &x.W); err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
 }

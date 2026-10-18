@@ -36,6 +36,13 @@ func main() {
 		log.Fatalf("parse config: %v", err)
 	}
 
+	onW := map[string]float64{}
+	for _, s := range cfg.Devices {
+		if s.OnWatts > 0 {
+			onW[s.ID] = s.OnWatts
+		}
+	}
+
 	var devs []core.Device
 	for _, spec := range cfg.Devices {
 		d, err := core.Build(spec)
@@ -60,7 +67,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: api.New(mgr, st, api.Options{Poll: poll}),
+		Handler: api.New(mgr, st, api.Options{Poll: poll, OnWatts: onW}),
 	}
 	go func() {
 		<-ctx.Done()
