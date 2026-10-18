@@ -13,6 +13,11 @@ import (
 
 const defaultOnW = 10.0
 
+const (
+	minRunSec = 120  // ignore blips shorter than 2 minutes
+	minRunWh  = 20.0 // ignore runs that used less than 20 Wh
+)
+
 type Device struct {
 	ID   string
 	Name string
@@ -38,7 +43,7 @@ func runs(samples []store.Sample, onW float64, intervalSec int64) []run {
 	var out []run
 	var cur *run
 	flush := func() {
-		if cur != nil && cur.n >= 2 {
+		if cur != nil && cur.n >= 2 && cur.end-cur.start >= minRunSec && cur.wh >= minRunWh {
 			out = append(out, *cur)
 		}
 		cur = nil
