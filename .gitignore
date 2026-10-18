@@ -1,6 +1,5 @@
 # --- SmartHub Specific ---
 smarthub.db
-devices.json
 
 # --- Go Backend ---
 /cmd/server/server

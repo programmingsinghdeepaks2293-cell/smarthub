@@ -1,0 +1,7 @@
+{
+  "devices": [
+    { "id": "plug-1", "name": "Washing Machine", "kind": "tapo.plug", "on_watts": 10, "config": { "host": "192.168.1.30" } },
+    { "id": "plug-2", "name": "MicroWave", "kind": "tapo.plug", "on_watts": 10, "config": { "host": "192.168.1.31" } },
+    { "id": "bulb-1", "name": "Living Room Bulb", "kind": "wiz.bulb", "config": { "host": "192.168.1.13", "rated_watts": 9 } }
+  ]
+}

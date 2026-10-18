@@ -1,4 +1,4 @@
-import type { CurrentMonth, EnergyRow, MonthRow, Range, Retention, SeriesDevice } from "./types";
+import type { CurrentMonth, EnergyRow, MonthRow, Range, Retention, SeriesDevice, Tip } from "./types";
 
 async function get<T>(path: string): Promise<T> {
   const r = await fetch(`/api${path}`);
@@ -18,6 +18,7 @@ export const api = {
   current: () => get<CurrentMonth>("/energy/current"),
   monthly: (months: number) => get<MonthRow[]>(`/energy/monthly?months=${months}`),
   retention: () => get<Retention>("/retention"),
+  insights: () => get<Tip[]>("/insights"),
   deleteAll: () => del("/data?confirm=DELETE"),
   deleteDevice: (id: string) => del(`/data/devices/${encodeURIComponent(id)}?confirm=DELETE`),
   command: (id: string, action: string, value?: unknown) =>
